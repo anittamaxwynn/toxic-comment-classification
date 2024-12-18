@@ -1,7 +1,16 @@
 [project]
-name = "comment-toxicity-model"
+name = "toxic-comment-classification"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "kaggle>=1.6.17",
+    "matplotlib>=3.9.3",
+    "pandas>=2.2.3",
+    "python-dotenv>=1.0.1",
+    "tensorflow",
+]
+
+[tool.uv.sources]
+tensorflow = { url = "https://storage.googleapis.com/tensorflow/versions/2.16.2/tensorflow-2.16.2-cp312-cp312-macosx_10_15_x86_64.whl" }
