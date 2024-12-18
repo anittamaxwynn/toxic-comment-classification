@@ -1,4 +1,4 @@
-from .data.download import download_competition_dataset
+from data.download import download_competition_dataset
 
 competition_identifier = input(
     "Enter the Kaggle competition identifier (e.g., 'titanic'): "
