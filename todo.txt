@@ -1,0 +1,7 @@
+1. Write tests for `data.download_data.py`
+2. Write tests for `data.preprocess_data.py`
+3. Finish exploratory data analysis (`data.explore.py`)
+4. Finish `modeling.build.py`
+5. Write tests for `modeling.build.py`
+6. Finish `modeling.train.py`
+7. Write tests for `modeling.train.py`
