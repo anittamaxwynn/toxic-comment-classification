@@ -1,7 +1,7 @@
 import os
 from typing import List
 
-DATASET_HANDLER: str = "julian3833/jigsaw-toxic-comment-classification-challenge"
+DATASET: str = "julian3833/jigsaw-toxic-comment-classification-challenge"
 
 INPUT: str = "comment_text"
 LABELS: List[str] = [
@@ -15,9 +15,9 @@ LABELS: List[str] = [
 
 BASE_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-RAW_DATA_DIR: str = os.path.join(BASE_DIR, "data/raw")
-PROCESSED_DATA_DIR: str = os.path.join(BASE_DIR, "data/processed")
-INTERIM_DATA_DIR: str = os.path.join(BASE_DIR, "data/interim")
+RAW_DATA_PATH: str = os.path.join(BASE_DIR, "data/raw")
+PROCESSED_DATA_PATH: str = os.path.join(BASE_DIR, "data/processed")
+INTERIM_DATA_PATH: str = os.path.join(BASE_DIR, "data/interim")
 
 MODEL_DIR: str = os.path.join(BASE_DIR, "models")
 

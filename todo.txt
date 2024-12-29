@@ -1,4 +1,4 @@
-1. Write tests for `data.download_data.py`
+1. Write tests for `data.download_data.py` // Done
 2. Write tests for `data.preprocess_data.py`
 3. Finish exploratory data analysis (`data.explore.py`)
 4. Finish `modeling.build.py`

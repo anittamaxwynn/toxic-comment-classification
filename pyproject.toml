@@ -20,4 +20,5 @@ tensorflow = { url = "https://storage.googleapis.com/tensorflow/versions/2.16.2/
 dev = [
     "pytest-mock>=3.14.0",
     "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
 ]
