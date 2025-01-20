@@ -1,10 +1,8 @@
-import os
-from typing import List
+from dataclasses import dataclass
 
 DATASET: str = "julian3833/jigsaw-toxic-comment-classification-challenge"
-
 INPUT: str = "comment_text"
-LABELS: List[str] = [
+LABELS: list[str] = [
     "toxic",
     "severe_toxic",
     "obscene",
@@ -13,14 +11,20 @@ LABELS: List[str] = [
     "identity_hate",
 ]
 
-BASE_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+@dataclass
+class DataConfig:
+    """Configuration for data preprocessing."""
+    raw_data_path: str
+    processed_data_path: str
+    interim_data_path: str
+    input: str
+    labels: list[str]
 
-RAW_DATA_PATH: str = os.path.join(BASE_DIR, "data/raw")
-PROCESSED_DATA_PATH: str = os.path.join(BASE_DIR, "data/processed")
-INTERIM_DATA_PATH: str = os.path.join(BASE_DIR, "data/interim")
+@dataclass
+class ModelConfig:
+    """Configuration for Tensorflow models."""
 
-MODEL_DIR: str = os.path.join(BASE_DIR, "models")
-
-BATCH_SIZE: int = 32
-EPOCHS: int = 2
-RANDOM_STATE: int = 0
+    max_tokens: int
+    output_sequence_length: int
+    embedding_dim: int
+    epochs: int
