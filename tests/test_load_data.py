@@ -1,13 +1,11 @@
-import pytest
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from unittest.mock import patch
-import shutil
+import pytest
 
-from src.load_data import DataProcessor, DatasetConfig
 import src.config as cfg
-from .mock_data import make_mock_train, make_mock_test, make_mock_test_labels
+from src.load_data import DataProcessor, DatasetConfig
+
+from .mock_data import make_mock_test_labels, make_mock_train
 
 
 @pytest.fixture

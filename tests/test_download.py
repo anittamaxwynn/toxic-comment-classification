@@ -1,14 +1,12 @@
-import pytest
 from pathlib import Path
-import unittest
-import numpy as np
+
 import pandas as pd
 import pytest
 
-from src.download import DatasetType, DatasetScheme, DatasetValidator, DatasetDownloader
 from src.config import INPUT, LABELS
+from src.download import DatasetDownloader, DatasetScheme, DatasetType, DatasetValidator
 
-from .mock_data import mock_train_df, mock_test_df, mock_test_labels_df
+from .mock_data import mock_test_df, mock_test_labels_df, mock_train_df
 
 
 @pytest.fixture
@@ -113,6 +111,7 @@ class TestDatasetValidator:
         missing_dtypes_df = mock_train_df.astype({"id": "int64"})
         with pytest.raises(ValueError, match="invalid dtype"):
             validator.validate_dataframe(missing_dtypes_df, DatasetType.TRAIN)
+
 
 class TestDatasetDownloader:
     def test_init(self) -> None:

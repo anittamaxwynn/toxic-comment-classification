@@ -1,7 +1,8 @@
-import pandas as pd
 import numpy as np
-from src import config as cfg
+import pandas as pd
 import pytest
+
+from src import config as cfg
 
 
 def generate_toxic_sample_labels(n_labels: int) -> list[int]:

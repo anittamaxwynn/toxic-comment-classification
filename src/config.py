@@ -11,14 +11,17 @@ LABELS: list[str] = [
     "identity_hate",
 ]
 
+
 @dataclass
 class DataConfig:
     """Configuration for data preprocessing."""
+
     raw_data_path: str
     processed_data_path: str
     interim_data_path: str
     input: str
     labels: list[str]
+
 
 @dataclass
 class ModelConfig:
