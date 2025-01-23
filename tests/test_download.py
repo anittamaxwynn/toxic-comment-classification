@@ -1,261 +1,218 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
-from src.config import INPUT, LABELS
-from src.download import DatasetDownloader, DatasetScheme, DatasetType, DatasetValidator
+from src import config
+from src.download import DataDownloader, RawDataScheme, RawDataType, RawDataValidator
 
-from .mock_data import mock_test_df, mock_test_labels_df, mock_train_df
-
-
-@pytest.fixture
-def temp_dir(tmp_path) -> Path:
-    """Creates a temporary data directory for testing"""
-    return tmp_path / "data"
+from .mock_data import get_mock_data
 
 
 @pytest.fixture
-def mock_kaggle_download(tmp_path):
-    """Mocks the kagglehub.dataset_download function with valid CSV files"""
-    kaggle_dir = tmp_path / "kaggle_data"
-    kaggle_dir.mkdir(exist_ok=True)
+def downloader():
+    return DataDownloader()
 
-    # Create dummy CSV files
-    for dtype in DatasetType:
-        schema = DatasetScheme.get_schema(dtype)
-        if dtype == DatasetType.TRAIN:
-            df = mock_train_df
-        elif dtype == DatasetType.TEST:
-            df = mock_test_df
-        else:
-            df = mock_test_labels_df
 
-        df.to_csv(kaggle_dir / schema.filename, index=False)
-
-    return kaggle_dir
+@pytest.fixture
+def validator():
+    return RawDataValidator()
 
 
 class TestDatasetScheme:
     def test_get_schema_train(self) -> None:
-        schema = DatasetScheme.get_schema(DatasetType.TRAIN)
-        assert schema.filename == "train.csv"
-        assert schema.valid_columns == {"id", INPUT} | set(LABELS)
-        assert schema.valid_dtypes == {
-            "id": "object",
-            INPUT: "object",
-            LABELS[0]: "int64",
-            LABELS[1]: "int64",
-            LABELS[2]: "int64",
-            LABELS[3]: "int64",
-            LABELS[4]: "int64",
-            LABELS[5]: "int64",
+        train_type = RawDataType.TRAIN
+        train_schema = RawDataScheme.get_schema(train_type)
+
+        assert train_schema.filename == "train.csv"
+        assert train_schema.valid_columns == {config.ID, config.INPUT} | set(
+            config.LABELS
+        )
+        assert train_schema.valid_types == {
+            config.ID: "object",
+            config.INPUT: "object",
+            **{label: "int64" for label in config.LABELS},
         }
 
-    def test_get_schema_test(self) -> None:
-        schema = DatasetScheme.get_schema(DatasetType.TEST)
-        assert schema.filename == "test.csv"
-        assert schema.valid_columns == {"id", INPUT}
-        assert schema.valid_dtypes == {
-            "id": "object",
-            INPUT: "object",
+    def test_get_schema_test_inputs(self) -> None:
+        test_inputs_type = RawDataType.TEST_INPUTS
+        test_inputs_schema = RawDataScheme.get_schema(test_inputs_type)
+
+        assert test_inputs_schema.filename == "test.csv"
+        assert test_inputs_schema.valid_columns == {config.ID, config.INPUT}
+        assert test_inputs_schema.valid_types == {
+            config.ID: "object",
+            config.INPUT: "object",
         }
 
     def test_get_schema_test_labels(self) -> None:
-        schema = DatasetScheme.get_schema(DatasetType.TEST_LABELS)
-        assert schema.valid_columns == {"id"} | set(LABELS)
-        assert schema.valid_dtypes == {
-            "id": "object",
-            LABELS[0]: "int64",
-            LABELS[1]: "int64",
-            LABELS[2]: "int64",
-            LABELS[3]: "int64",
-            LABELS[4]: "int64",
-            LABELS[5]: "int64",
-        }
+        test_labels_type = RawDataType.TEST_LABELS
+        test_labels_schema = RawDataScheme.get_schema(test_labels_type)
 
-    def test_merge_dicts(self) -> None:
-        dict1 = {"a": 1, "b": 2}
-        dict2 = {"b": 3, "c": 4}
-        expected_dict = {"a": 1, "b": 3, "c": 4}
-        assert DatasetScheme._merge_dicts(dict1, dict2) == expected_dict
+        assert test_labels_schema.filename == "test_labels.csv"
+        assert test_labels_schema.valid_columns == {config.ID} | set(config.LABELS)
+        assert test_labels_schema.valid_types == {
+            config.ID: "object",
+            **{label: "int64" for label in config.LABELS},
+        }
 
 
 class TestDatasetValidator:
-    def test_empty_dataframe(self) -> None:
-        validator = DatasetValidator()
-        empty_df = pd.DataFrame()
+    def test_validate_size(self, validator) -> None:
+        df = pd.DataFrame()
 
         with pytest.raises(ValueError, match="dataset is empty"):
-            validator.validate_dataframe(empty_df, DatasetType.TRAIN)
+            validator._validate_size(df, RawDataType.TRAIN)
 
-    def test_missing_columns(self, mock_train_df) -> None:
-        validator = DatasetValidator()
+    def test_missing_columns(self, validator) -> None:
+        df = get_mock_data(RawDataType.TRAIN).drop(columns=["id"])
 
-        missing_columns_df = mock_train_df.drop(columns=["id"])
         with pytest.raises(ValueError, match="missing columns"):
-            validator.validate_dataframe(missing_columns_df, DatasetType.TRAIN)
+            validator.validate_dataframe(df, RawDataType.TRAIN)
 
-    def test_extra_columns(self, mock_train_df) -> None:
-        validator = DatasetValidator()
-
-        extra_columns_df = mock_train_df.copy()
-        extra_columns_df["extra_column"] = "extra_column"
+    def test_extra_columns(self, validator) -> None:
+        df = get_mock_data(RawDataType.TRAIN).copy()
+        df["extra_column"] = "extra_column"
 
         with pytest.raises(ValueError, match="unexpected columns"):
-            validator.validate_dataframe(extra_columns_df, DatasetType.TRAIN)
+            validator.validate_dataframe(df, RawDataType.TRAIN)
 
-    def test_missing_dtypes(self, mock_train_df) -> None:
-        validator = DatasetValidator()
+    def test_validate_types_error(self, validator) -> None:
+        df = get_mock_data(RawDataType.TRAIN).astype({"id": "int64"})
 
-        missing_dtypes_df = mock_train_df.astype({"id": "int64"})
         with pytest.raises(ValueError, match="invalid dtype"):
-            validator.validate_dataframe(missing_dtypes_df, DatasetType.TRAIN)
+            validator.validate_dataframe(df, RawDataType.TRAIN)
 
 
 class TestDatasetDownloader:
-    def test_init(self) -> None:
-        downloader = DatasetDownloader()
-        assert type(downloader.validator) is DatasetValidator
+    def test_init(self, downloader) -> None:
+        assert hasattr(downloader, "validator")
+        assert type(downloader.validator) is RawDataValidator
 
-    def test_raw_data_exists(self, mock_kaggle_download) -> None:
-        downloader = DatasetDownloader()
-        assert downloader._raw_data_exists(mock_kaggle_download) is True
+    def test_raw_data_exists(self, downloader, tmp_path) -> None:
+        """Tests the _raw_data_exists method."""
+        # Create mock files
+        for dtype in RawDataType:
+            schema = RawDataScheme.get_schema(dtype)
+            filepath = tmp_path / schema.filename
+            pd.DataFrame().to_csv(filepath, index=False)
 
-        # Test with missing file
-        (mock_kaggle_download / "train.csv").unlink()
-        assert downloader._raw_data_exists(mock_kaggle_download) is False
+        assert downloader._raw_data_exists(tmp_path) is True
 
-    # def test_copy_directory(self, tmp_path) -> None:
-    #     """Test _copy_directory method."""
-    #     src = tmp_path / "src"
-    #     dst = tmp_path / "dst"
-    #
-    #     # Create source directory with a file
-    #     src.mkdir()
-    #     (src / "test.txt").write_text("test")
-    #
-    #     # Test copying to new directory
-    #     downloader = DatasetDownloader()
-    #     downloader._copy_directory(src, dst)
-    #     assert dst.exists()
-    #     assert (dst / "test.txt").read_text() == "test"
-    #
-    #     # Test copying to existing directory (should overwrite)
-    #     (dst / "old.txt").write_text("old")
-    #     downloader._copy_directory(src, dst)
-    #     assert not (dst / "old.txt").exists()
-    #     assert (dst / "test.txt").exists()
+        # Remove one file to test negative case
+        train_filename = RawDataScheme.get_schema(RawDataType.TRAIN).filename
+        (tmp_path / train_filename).unlink()
+        assert downloader._raw_data_exists(tmp_path) is False
 
+    def test_prepare_directory(self, downloader, tmp_path):
+        """Tests the _prepare_directory method."""
+        # Create existing directory with a file
+        existing_dir = tmp_path / "existing"
+        existing_dir.mkdir()
+        (existing_dir / "test.txt").write_text("test")
 
-# class testdatavalidator:
-#     def test_empty_dataframe(self):
-#         validator = datasetvalidator()
-#         empty_df = pd.dataframe()
-#
-#         with pytest.raises(valueerror, match="empty"):
-#             validator.validate_dataframe(empty_df, datasettype.train)
-#
-#     @pytest.mark.parametrize(
-#         "dataset_type", [datasettype.train, datasettype.test, datasettype.test_labels]
-#     )
-#     def test_missing_columns(self, dataset_type):
-#         validator = datasetvalidator()
-#
-#         def get_missing_columns_df(dataset_type) -> pd.dataframe:
-#             if dataset_type == datasettype.train:
-#                 return mock_train_df.copy().drop(columns=["id"])
-#             elif dataset_type == datasettype.test:
-#                 return mock_test_df.copy().drop(columns=[cfg.input], inplace=false)
-#             elif dataset_type == datasettype.test_labels:
-#                 return mock_test_labels_df.copy().drop(
-#                     columns=[cfg.labels[0]], inplace=false
-#                 )
-#
-#         missing_columns_df = get_missing_columns_df(dataset_type)
-#
-#         with pytest.raises(valueerror, match="missing"):
-#             validator.validate_dataframe(missing_columns_df, dataset_type)
-#
-#     def test_extra_columns(self):
-#         validator = datasetvalidator()
-#         extra_columns_df = mock_train_df.copy()
-#         extra_columns_df["extra_column"] = "extra_column"
-#
-#         with pytest.raises(valueerror, match="unexpected columns"):
-#             validator.validate_dataframe(extra_columns_df, datasettype.train)
-#
-#
-# class testdatadownloader:
-#     def test_init(self) -> none:
-#         downloader = datasetdownloader()
-#         assert downloader.validator == datasetvalidator()
-#
-#     def test_raw_data_exists(self, mock_kaggle_download):
-#         downloader = datasetdownloader()
-#         assert downloader._raw_data_exists(mock_kaggle_download) is true
-#
-#         # test with missing file
-#         (mock_kaggle_download / "train.csv").unlink()
-#         assert downloader._raw_data_exists(mock_kaggle_download) is false
-#
-#     def test_copy_directory(self, tmp_path):
-#         """test _copy_directory method."""
-#         src = tmp_path / "src"
-#         dst = tmp_path / "dst"
-#
-#         # create source directory with a file
-#         src.mkdir()
-#         (src / "test.txt").write_text("test")
-#
-#         # test copying to new directory
-#         downloader = datasetdownloader()
-#         downloader._copy_directory(src, dst)
-#         assert dst.exists()
-#         assert (dst / "test.txt").read_text() == "test"
-#
-#         # test copying to existing directory (should overwrite)
-#         (dst / "old.txt").write_text("old")
-#         downloader._copy_directory(src, dst)
-#         assert not (dst / "old.txt").exists()
-#         assert (dst / "test.txt").exists()
-#
-#     @patch("kagglehub.dataset_download")
-#     def test_download_success(self, mock_download, tmp_path, mock_kaggle_download):
-#         """test successful download and validation."""
-#         # create a seperate target directory
-#         target_dir = tmp_path / "target"
-#
-#         # mock kaggle download  to return our mock directory
-#         mock_download.return_value = str(mock_kaggle_download)
-#
-#         # test downloading data
-#         downloader = datasetdownloader()
-#         downloader.download(target_dir)
-#
-#         for dtype in datasettype:
-#             schema = datasetscheme.get_schema(dtype)
-#             assert (target_dir / schema.filename).exists()
-#
-#     @patch("kagglehub.dataset_download")
-#     def test_download_existing_data(self, mock_download, mock_kaggle_download):
-#         """test download when data alreafy exists."""
-#         with pytest.raises(fileexistserror, match="already exists"):
-#             downloader = datasetdownloader()
-#             downloader.download(mock_kaggle_download)
-#         mock_download.assert_not_called()
-#
-#     @patch("kagglehub.dataset_download")
-#     def test_download_force(self, mock_download, tmp_path, mock_kaggle_download):
-#         """test download when force is true."""
-#         # create a seperate target directory with existing data
-#         target_dir = tmp_path / "target"
-#         shutil.copytree(mock_kaggle_download, target_dir)
-#
-#         # mock kaggle download
-#         mock_download.return_value = str(mock_kaggle_download)
-#
-#         # test forced download
-#         downloader = datasetdownloader()
-#         downloader.download(target_dir, force_download=true)
-#         mock_download.assert_called_once_with(force_download=true)
+        downloader._prepare_directory(existing_dir)
+
+        # Check directory is empty and exists
+        assert existing_dir.exists()
+        assert len(list(existing_dir.iterdir())) == 0
+
+    def test_download_from_kaggle_success(self, downloader):
+        """Tests the _download_from_kaggle method with mocking."""
+        mock_cache_path = Path("/mock/cache/path")
+
+        with patch(
+            "kagglehub.dataset_download", return_value=str(mock_cache_path)
+        ) as mock_download:
+            result = downloader._download_from_kaggle(force=False)
+
+            # Verify kagglehub.dataset_download was called correctly
+            mock_download.assert_called_once_with(
+                handle=config.DATASET,
+                force_download=False,
+            )
+
+            assert result == mock_cache_path
+
+    def test_download_from_kaggle_failure(self, downloader):
+        """Tests the _download_from_kaggle method with download failure."""
+        with patch("kagglehub.dataset_download", side_effect=Exception("API Error")):
+            with pytest.raises(ValueError, match="Failed to download dataset:"):
+                downloader._download_from_kaggle(force=False)
+
+    def test_download_data_skip_existing(self, downloader, tmp_path):
+        """Test download_data skips when data exisits and force=False."""
+        # Create mock existing files
+        for dtype in RawDataType:
+            schema = RawDataScheme.get_schema(dtype)
+            filepath = tmp_path / schema.filename
+            pd.DataFrame().to_csv(filepath, index=False)
+
+        with (
+            patch.object(downloader, "_download_from_kaggle") as mock_download,
+            patch("shutil.copytree") as mock_copy,
+            patch.object(downloader, "_validate_datasets") as mock_validate,
+        ):
+            downloader.download_data(tmp_path, force=False)
+
+            # Verify no download or copy occured
+            mock_download.assert_not_called()
+            mock_copy.assert_not_called()
+            mock_validate.assert_not_called()
+
+    def test_download_data_full_flow(self, downloader, tmp_path):
+        """Test full download_data method flow."""
+        mock_cache_path = Path("/mock/cache/path")
+
+        with (
+            patch.object(
+                downloader, "_download_from_kaggle", return_value=mock_cache_path
+            ) as mock_download,
+            patch("shutil.copytree") as mock_copy,
+            patch.object(downloader, "_validate_datasets") as mock_validate,
+            patch("pandas.read_csv", side_effect=get_mock_data) as mock_read_csv,
+        ):
+            downloader.download_data(tmp_path, force=True)
+
+            # Verify download and copy occurred
+            mock_download.assert_called_once_with(True)
+            mock_copy.assert_called_once()
+            mock_validate.assert_called_once()
+
+    def test_validate_datasets_success(self, downloader, tmp_path):
+        """Test the _validate_datasets method."""
+        # Create mock CSV files
+        for dtype in RawDataType:
+            schema = RawDataScheme.get_schema(dtype)
+            filepath = tmp_path / schema.filename
+            get_mock_data(dtype).to_csv(filepath, index=False)
+
+        # This should not raise any errors
+        assert downloader._validate_datasets(tmp_path) is None
+
+    def test_validate_datasets_missing(self, downloader, tmp_path):
+        """Test _validate_datasets raises error for missing files."""
+        # Create only the train file
+        train_schema = RawDataScheme.get_schema(RawDataType.TRAIN)
+        train_path = tmp_path / train_schema.filename
+        get_mock_data(RawDataType.TRAIN).to_csv(train_path, index=False)
+
+        # This should raise an error
+        with pytest.raises(FileNotFoundError, match="Expected dataset file missing:"):
+            downloader._validate_datasets(tmp_path)
+
+    def test_validate_datasets_mismatch(self, downloader, tmp_path):
+        """Test _validate_datasets raises error for mismatched test data."""
+        # Create mock CSV files, but test_inputs with 10 rows and test_labels with 5 rows
+        for dtype in RawDataType:
+            schema = RawDataScheme.get_schema(dtype)
+            filepath = tmp_path / schema.filename
+            if dtype == RawDataType.TEST_LABELS:
+                get_mock_data(dtype).head(5).to_csv(filepath, index=False)
+            else:
+                get_mock_data(dtype).head(10).to_csv(filepath, index=False)
+
+        # This should raise an error
+        with pytest.raises(ValueError, match="Mismatch between test data"):
+            downloader._validate_datasets(tmp_path)

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+import logging
 
 DATASET: str = "julian3833/jigsaw-toxic-comment-classification-challenge"
 INPUT: str = "comment_text"
@@ -10,24 +10,20 @@ LABELS: list[str] = [
     "insult",
     "identity_hate",
 ]
+ID: str = "id"
+
+TYPES: dict[str, str] = {
+    ID: "object",
+    INPUT: "object",
+    **{label: "int64" for label in LABELS},
+}
 
 
-@dataclass
-class DataConfig:
-    """Configuration for data preprocessing."""
-
-    raw_data_path: str
-    processed_data_path: str
-    interim_data_path: str
-    input: str
-    labels: list[str]
+def setup_logging(level=logging.INFO):
+    logging.basicConfig(
+        level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
 
-@dataclass
-class ModelConfig:
-    """Configuration for Tensorflow models."""
-
-    max_tokens: int
-    output_sequence_length: int
-    embedding_dim: int
-    epochs: int
+def get_logger(name):
+    return logging.getLogger(name)

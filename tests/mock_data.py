@@ -1,8 +1,22 @@
 import numpy as np
 import pandas as pd
-import pytest
 
-from src import config as cfg
+from src import config, download
+
+N_SAMPLES: int = 10
+TOXIC_FRACTION: float = 0.2
+UNTESTED_FRACTION: float = 0.2
+
+
+def get_mock_data(data_type: download.RawDataType) -> pd.DataFrame:
+    """Generate mock dataframes for testing."""
+    mock_data = {
+        download.RawDataType.TRAIN: make_mock_train(),
+        download.RawDataType.TEST_INPUTS: make_mock_test_inputs(),
+        download.RawDataType.TEST_LABELS: make_mock_test_labels(),
+    }
+
+    return mock_data[data_type]
 
 
 def generate_toxic_sample_labels(n_labels: int) -> list[int]:
@@ -17,12 +31,13 @@ def generate_toxic_sample_labels(n_labels: int) -> list[int]:
     return labels
 
 
-@pytest.fixture
-def mock_train_df(n_samples: int = 100, toxic_fraction: float = 0.2) -> pd.DataFrame:
+def make_mock_train() -> pd.DataFrame:
     """Create mock training dataset with sample-level toxicity."""
-    n_labels = len(cfg.LABELS)
-    n_toxic = int(n_samples * toxic_fraction)
-    n_non_toxic = n_samples - n_toxic
+    n_labels = len(config.LABELS)
+    n_toxic = int(N_SAMPLES * TOXIC_FRACTION)
+    n_non_toxic = N_SAMPLES - n_toxic
+
+    assert n_toxic + n_non_toxic == N_SAMPLES
 
     # Generate labels
     all_labels = []
@@ -41,33 +56,29 @@ def mock_train_df(n_samples: int = 100, toxic_fraction: float = 0.2) -> pd.DataF
     # Convert to dataframe format
     labels_dict = {
         label: [sample[i] for sample in all_labels]
-        for i, label in enumerate(cfg.LABELS)
+        for i, label in enumerate(config.LABELS)
     }
 
     return pd.DataFrame(
         {
-            "id": range(n_samples),
-            cfg.INPUT: ["text"] * n_samples,
+            "id": [str(i) for i in range(N_SAMPLES)],
+            config.INPUT: ["text"] * N_SAMPLES,
             **labels_dict,
         }
     )
 
 
-@pytest.fixture
-def mock_test_df(n_samples: int = 100) -> pd.DataFrame:
+def make_mock_test_inputs() -> pd.DataFrame:
     """Create mock test dataset without labels."""
     return pd.DataFrame(
         {
-            "id": range(n_samples, 2 * n_samples),
-            cfg.INPUT: ["text"] * n_samples,
+            "id": [str(i) for i in range(N_SAMPLES, 2 * N_SAMPLES)],
+            config.INPUT: ["text"] * N_SAMPLES,
         }
     )
 
 
-@pytest.fixture
-def mock_test_labels_df(
-    n_samples: int = 100, toxic_fraction: float = 0.2, untested_fraction: float = 0.2
-) -> pd.DataFrame:
+def make_mock_test_labels() -> pd.DataFrame:
     """
     Create mock test labels with sample-level toxicity and untested samples.
 
@@ -75,11 +86,12 @@ def mock_test_labels_df(
     - toxic_fraction of the remaining samples will have at least one label as 1
     - the rest will have all labels as 0
     """
-    n_labels = len(cfg.LABELS)
-    n_untested = int(n_samples * untested_fraction)
-    n_tested = n_samples - n_untested
-    n_toxic = int(n_tested * toxic_fraction)
-    n_non_toxic = n_tested - n_toxic
+    n_labels = len(config.LABELS)
+    n_toxic = int(N_SAMPLES * TOXIC_FRACTION)
+    n_untested = int(N_SAMPLES * UNTESTED_FRACTION)
+    n_non_toxic = N_SAMPLES - n_toxic - n_untested
+
+    assert n_toxic + n_untested + n_non_toxic == N_SAMPLES
 
     all_labels = []
 
@@ -101,12 +113,12 @@ def mock_test_labels_df(
     # Convert to dataframe format
     labels_dict = {
         label: [sample[i] for sample in all_labels]
-        for i, label in enumerate(cfg.LABELS)
+        for i, label in enumerate(config.LABELS)
     }
 
     return pd.DataFrame(
         {
-            "id": range(n_samples, 2 * n_samples),
+            "id": [str(i) for i in range(N_SAMPLES, 2 * N_SAMPLES)],
             **labels_dict,
         }
     )

@@ -1,20 +1,15 @@
-import logging
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Dict, Set
+from typing import Self
 
 import kagglehub
 import pandas as pd
 
-from .config import DATASET, INPUT, LABELS
+from . import config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+logger = config.get_logger("my_logger")
 
 
 class RawDataType(Enum):
@@ -26,117 +21,115 @@ class RawDataType(Enum):
 @dataclass
 class RawDataScheme:
     filename: str
-    valid_columns: Set[str]
-    valid_dtypes: Dict[str, str]
+    valid_columns: set[str]
+    valid_types: dict[str, str]
 
-    _BASE_DTYPES = {"id": "object"}
-    _INPUT_DTYPES = {INPUT: "object"}
-    _LABEL_DTYPES = {label: "int64" for label in LABELS}
-
-    _BASE_COLUMNS = {"id"}
-    _INPUT_COLUMNS = {INPUT}
-    _LABEL_COLUMNS = set(LABELS)
+    _INPUT: str = field(default_factory=lambda: config.INPUT)
+    _LABELS: list[str] = field(default_factory=lambda: config.LABELS)
+    _ID: str = field(default_factory=lambda: config.ID)
+    _TYPES: dict[str, str] = field(default_factory=lambda: config.TYPES)
 
     @classmethod
-    def get_schema(cls, dataset_type: RawDataType) -> "RawDataScheme":
-        schema_map = {
-            RawDataType.TRAIN: cls(
-                filename="train.csv",
-                valid_columns=cls._BASE_COLUMNS
-                | cls._INPUT_COLUMNS
-                | cls._LABEL_COLUMNS,
-                valid_dtypes=cls._merge_dicts(
-                    cls._BASE_DTYPES, cls._INPUT_DTYPES, cls._LABEL_DTYPES
-                ),
-            ),
-            RawDataType.TEST_INPUTS: cls(
-                filename="test.csv",
-                valid_columns=cls._BASE_COLUMNS | cls._INPUT_COLUMNS,
-                valid_dtypes=cls._merge_dicts(cls._BASE_DTYPES, cls._INPUT_DTYPES),
-            ),
-            RawDataType.TEST_LABELS: cls(
-                filename="test_labels.csv",
-                valid_columns=cls._BASE_COLUMNS | cls._LABEL_COLUMNS,
-                valid_dtypes=cls._merge_dicts(cls._BASE_DTYPES, cls._LABEL_DTYPES),
-            ),
-        }
-        return schema_map[dataset_type]
+    def get_schema(cls, dataset_type: RawDataType) -> Self:
+        """Generate schema based on the dataset type."""
+        if dataset_type == RawDataType.TRAIN:
+            filename = "train.csv"
+            valid_columns = {
+                cls._get_id_col(),
+                cls._get_input_col(),
+                *cls._get_label_cols(),
+            }
 
-    @staticmethod
-    def _merge_dicts(*dicts: dict) -> dict:
-        merged = {}
-        for d in dicts:
-            merged.update(d)
-        return merged
+        elif dataset_type == RawDataType.TEST_INPUTS:
+            filename = "test.csv"
+            valid_columns = {cls._get_id_col(), cls._get_input_col()}
+        else:
+            filename = "test_labels.csv"
+            valid_columns = {cls._get_id_col(), *cls._get_label_cols()}
+
+        valid_types = {col: cls._get_col_types()[col] for col in valid_columns}
+
+        return cls(filename, valid_columns, valid_types)
+
+    @classmethod
+    def _get_id_col(cls):
+        return config.ID
+
+    @classmethod
+    def _get_input_col(cls):
+        return config.INPUT
+
+    @classmethod
+    def _get_label_cols(cls):
+        return config.LABELS
+
+    @classmethod
+    def _get_col_types(cls):
+        return config.TYPES
 
 
-class DataValidator:
+class RawDataValidator:
     @classmethod
     def validate_dataframe(cls, df: pd.DataFrame, dataset_type: RawDataType) -> None:
         logger.info("Validating %s dataset...", dataset_type.name)
-        cls._validate_not_empty(df, dataset_type)
+        cls._validate_size(df, dataset_type)
         cls._validate_columns(df, dataset_type)
-        cls._validate_dtypes(df, dataset_type)
+        cls._validate_types(df, dataset_type)
 
     @staticmethod
-    def _validate_not_empty(df: pd.DataFrame, dataset_type: RawDataType) -> None:
+    def _validate_size(df: pd.DataFrame, dataset_type: RawDataType) -> None:
         if df.empty:
             raise ValueError(f"The {dataset_type.name.lower()} dataset is empty.")
 
     @staticmethod
     def _validate_columns(df: pd.DataFrame, dataset_type: RawDataType) -> None:
         schema = RawDataScheme.get_schema(dataset_type)
-        actual_columns = set(df.columns)
 
-        missing_columns = schema.valid_columns - actual_columns
+        missing_columns = schema.valid_columns - set(df.columns)
+        unexpected_columns = set(df.columns) - schema.valid_columns
+
         if missing_columns:
             raise ValueError(
                 f"The {dataset_type.name.lower()} dataset is missing columns: {missing_columns}"
             )
 
-        unexpected_columns = actual_columns - schema.valid_columns
         if unexpected_columns:
             raise ValueError(
                 f"The {dataset_type.name.lower()} dataset contains unexpected columns: {unexpected_columns}"
             )
 
     @staticmethod
-    def _validate_dtypes(df: pd.DataFrame, dataset_type: RawDataType) -> None:
+    def _validate_types(df: pd.DataFrame, dataset_type: RawDataType) -> None:
         schema = RawDataScheme.get_schema(dataset_type)
         for column, dtype in df.dtypes.items():
-            expected_dtype = schema.valid_dtypes.get(column)
-            if expected_dtype is None:
-                raise ValueError(
-                    f"The {dataset_type.name.lower()} dataset contains unexpected column: {column}"
-                )
-            if dtype != expected_dtype:
+            valid_type = schema.valid_types[column]
+            if dtype != valid_type:
                 raise ValueError(
                     f"The {dataset_type.name.lower()} dataset has invalid dtype for {column}: "
-                    f"expected {expected_dtype}, got {dtype}"
+                    f"expected {valid_type}, got {dtype}"
                 )
 
 
 class DataDownloader:
     def __init__(self) -> None:
-        self.validator = DataValidator()
+        self.validator = RawDataValidator()
 
     def download_data(self, download_path: Path | str, force: bool = False) -> None:
         download_path = Path(download_path)
 
-        if self._raw_data_exists(download_path) and not force:
+        if not force and self._raw_data_exists(download_path):
             logger.info(
-                "Raw data already exists at %s. Skipping download. Use force=True to overwrite.",
-                download_path,
+                "Raw data already exists at %s. Skipping download.", download_path
             )
-            return None
+            return
 
         logger.info("Downloading data from Kaggle...")
-        cache_dir = Path(
-            kagglehub.dataset_download(handle=DATASET, force_download=force)
-        )
-        self._copy_directory(cache_dir, download_path)
+        cache_dir = self._download_from_kaggle(force)
 
-        self._validate_all_datasets(download_path)
+        self._prepare_directory(download_path)
+        shutil.copytree(cache_dir, download_path, dirs_exist_ok=True)
+
+        self._validate_datasets(download_path)
         logger.info("Download complete. Data saved to %s", download_path)
 
     @staticmethod
@@ -147,26 +140,40 @@ class DataDownloader:
         )
 
     @staticmethod
-    def _copy_directory(src: Path, dst: Path) -> None:
-        if dst.exists():
-            shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+    def _prepare_directory(download_path: Path) -> None:
+        if download_path.exists():
+            shutil.rmtree(download_path)
+        download_path.mkdir(parents=True, exist_ok=True)
 
-    def _validate_all_datasets(self, download_path: Path) -> None:
-        test_df_size: int
-        test_labels_df_size: int
+    @staticmethod
+    def _download_from_kaggle(force: bool) -> Path:
+        try:
+            return Path(
+                kagglehub.dataset_download(handle=config.DATASET, force_download=force)
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to download dataset: {e}")
+
+    def _validate_datasets(self, download_path: Path) -> None:
+        test_input_size = None
+        test_label_size = None
 
         for dataset_type in RawDataType:
             schema = RawDataScheme.get_schema(dataset_type)
-            df = pd.read_csv(download_path / schema.filename)
+            filepath = download_path / schema.filename
+
+            if not filepath.exists():
+                raise FileNotFoundError(f"Expected dataset file missing: {filepath}")
+
+            df = pd.read_csv(filepath, dtype={config.ID: str})
             self.validator.validate_dataframe(df, dataset_type)
 
             if dataset_type == RawDataType.TEST_INPUTS:
-                test_df_size = len(df)
+                test_input_size = len(df)
             elif dataset_type == RawDataType.TEST_LABELS:
-                test_labels_df_size = len(df)
+                test_label_size = len(df)
 
-        if test_df_size != test_labels_df_size:
-            raise ValueError(
-                f"The test dataset has {test_df_size} rows, but the test labels dataset has {test_labels_df_size} rows."
-            )
+        if test_input_size is not None and test_label_size is not None:
+            if test_input_size != test_label_size:
+                msg = f"Mismatch between test data ({test_input_size}) and test labels ({test_label_size}) rows."
+                raise ValueError(msg)
