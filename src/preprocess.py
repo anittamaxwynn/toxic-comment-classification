@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 
 import keras
@@ -20,29 +20,53 @@ class DatasetSplit(Enum):
 
 @dataclass
 class DatasetConfig:
-    val_size: float
-    batch_size: int
-    max_tokens: int
-    output_sequence_length: int
+    val_size: float = 0.2
+    batch_size: int = 32
+    max_tokens: int = 10000
+    output_sequence_length: int = 100
     vectorize: bool = True
     shuffle: bool = True
     optimize: bool = True
 
     @property
     def dir_name(self) -> str:
-        return self.generate_config_str()
+        return self.generate_dir_string()
 
-    def generate_config_str(self) -> str:
-        string = ""
-        for key, value in self.__dict__.items():
-            string += f"{key}={value}__"
-        return string.lower().strip("_")
+    def generate_dir_string(self) -> str:
+        parts = []
+        for field in fields(self):
+            value = getattr(self, field.name)
+
+            # Skip if vectorize is False and these specific fields
+            if not self.vectorize and field.name in [
+                "max_tokens",
+                "output_sequence_length",
+            ]:
+                continue
+
+            # Only add to string if boolean fields are False
+            if isinstance(value, bool):
+                if not value:
+                    parts.append(f"{field.name}={value}")
+            else:
+                parts.append(f"{field.name}={value}")
+
+        return "__".join(parts).lower()
 
 
 class Preprocessor:
     def __init__(self, config: DatasetConfig):
         self.config = config
-        self.vectorize_layer: keras.layers.TextVectorization | None = None
+
+        if self.config.vectorize:
+            self.vectorize_layer = keras.layers.TextVectorization(
+                standardize="lower_and_strip_punctuation",
+                max_tokens=self.config.max_tokens,
+                output_mode="int",
+                output_sequence_length=self.config.output_sequence_length,
+            )
+        else:
+            self.vectorize_layer = None
 
         self._is_adapted = False
 
@@ -54,8 +78,9 @@ class Preprocessor:
     ) -> tf.data.Dataset:
         """Vectorizes the text inputs of a given dataset."""
         if self.vectorize_layer is None:
-            self.vectorize_layer = self._make_vectorize_layer()
-
+            raise ValueError(
+                "TextVectorization layer not enabled. Set `vectorize` to True in the data config."
+            )
         if adapt:
             self._adapt_vectorize_layer(dataset, split)
 
@@ -63,24 +88,13 @@ class Preprocessor:
 
         return dataset.map(self._vectorize_text)
 
-    def _make_vectorize_layer(self) -> keras.layers.TextVectorization:
-        """Make a vectorize layer."""
-        logger.info(
-            f"Making vectorize layer with max_tokens={self.config.max_tokens} and output_sequence_length={self.config.output_sequence_length}..."
-        )
-        return keras.layers.TextVectorization(
-            max_tokens=self.config.max_tokens,
-            output_mode="int",
-            output_sequence_length=self.config.output_sequence_length,
-        )
-
     def _adapt_vectorize_layer(
         self, dataset: tf.data.Dataset, split: DatasetSplit
     ) -> None:
         """Trains the vectorizer on a given dataset."""
         if self.vectorize_layer is None:
             raise ValueError(
-                "Vectorizer is not initialized. First call `_make_vectorize_layer`."
+                "TextVectorization layer is not enabled. Set `vectorize` to True in the data config."
             )
 
         logger.info(f"Adapting vectorize layer to {split.name} text data...")
@@ -197,3 +211,18 @@ class Preprocessor:
             )
 
         return pd.DataFrame(df_filtered.reset_index(drop=True))
+
+
+if __name__ == "__main__":
+    data_config = DatasetConfig(
+        val_size=0.2,
+        batch_size=32,
+        max_tokens=10000,
+        output_sequence_length=100,
+        vectorize=False,
+        shuffle=False,
+        optimize=True,
+    )
+
+    data_dir_name = data_config.dir_name
+    print(data_dir_name)
