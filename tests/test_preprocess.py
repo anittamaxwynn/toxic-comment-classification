@@ -1,10 +1,12 @@
-import pytest
 import keras
+import pytest
 import tensorflow as tf
+
 from src import config
-from src.preprocess import DatasetConfig, Preprocessor, DatasetSplit
+from src.preprocess import DatasetConfig, DatasetSplit, Preprocessor
 
 from . import mock_data
+
 
 @pytest.fixture
 def mock_train_dataset() -> tf.data.Dataset:
@@ -97,8 +99,10 @@ class TestPreprocessor:
 
     def test_adapt_vectorize_layer(self, mock_preprocessor, mock_train_dataset):
         """Test the adaptation of the vectorize layer."""
-        mock_preprocessor._adapt_vectorize_layer(mock_train_dataset, split=DatasetSplit.TRAIN)
+        mock_preprocessor._adapt_vectorize_layer(
+            mock_train_dataset, split=DatasetSplit.TRAIN
+        )
         assert mock_preprocessor.vectorize_layer.built is True
         assert mock_preprocessor._is_adapted is True
 
-        
+

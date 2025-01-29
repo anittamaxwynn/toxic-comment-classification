@@ -1,3 +1,1 @@
-from .config import setup_logging
-
-setup_logging()
+from .config import get_logger

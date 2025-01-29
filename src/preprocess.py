@@ -68,9 +68,7 @@ class Preprocessor:
         else:
             self.vectorize_layer = None
 
-        self._is_adapted = False
-
-    def vectorize_dataset(
+    def vectorize(
         self,
         dataset: tf.data.Dataset,
         split: DatasetSplit,
@@ -81,28 +79,16 @@ class Preprocessor:
             raise ValueError(
                 "TextVectorization layer not enabled. Set `vectorize` to True in the data config."
             )
-        if adapt:
-            self._adapt_vectorize_layer(dataset, split)
+        else:
+            if adapt:
+                logger.info(f"Adapting vectorize layer to {split.name} text data...")
+                text = dataset.map(lambda x, _: x)
+                self.vectorize_layer.adapt(text)
 
-        logger.info(f"Vectorizing {split.name} text data...")
-
-        return dataset.map(self._vectorize_text)
-
-    def _adapt_vectorize_layer(
-        self, dataset: tf.data.Dataset, split: DatasetSplit
-    ) -> None:
-        """Trains the vectorizer on a given dataset."""
-        if self.vectorize_layer is None:
-            raise ValueError(
-                "TextVectorization layer is not enabled. Set `vectorize` to True in the data config."
-            )
-
-        logger.info(f"Adapting vectorize layer to {split.name} text data...")
-
-        # Make a text-only dataset (without labels)
-        text_dataset = dataset.map(lambda x, _: x)
-        self.vectorize_layer.adapt(text_dataset)
-        self._is_adapted = True
+            logger.info(f"Vectorizing {split.name} text data...")
+            dataset = dataset.map(self._vectorize_text)
+            assert self.vectorize_layer.built
+            return dataset
 
     def _vectorize_text(
         self, text: tf.Tensor, labels: tf.Tensor
@@ -111,7 +97,7 @@ class Preprocessor:
         text = tf.expand_dims(text, -1)
         return self.vectorize_layer(text), labels
 
-    def convert_to_dataset(
+    def convert_to_tf(
         self,
         df: pd.DataFrame,
         split: DatasetSplit,
@@ -130,7 +116,7 @@ class Preprocessor:
 
         return ds
 
-    def split_dataset(
+    def split(
         self,
         dataset: tf.data.Dataset,
         split: DatasetSplit,
@@ -153,7 +139,7 @@ class Preprocessor:
         )
         return train_ds, val_ds
 
-    def optimize_dataset(
+    def optimize(
         self, dataset: tf.data.Dataset, split: DatasetSplit
     ) -> tf.data.Dataset:
         """Optimize a TensorFlow dataset for performance."""
@@ -211,18 +197,3 @@ class Preprocessor:
             )
 
         return pd.DataFrame(df_filtered.reset_index(drop=True))
-
-
-if __name__ == "__main__":
-    data_config = DatasetConfig(
-        val_size=0.2,
-        batch_size=32,
-        max_tokens=10000,
-        output_sequence_length=100,
-        vectorize=False,
-        shuffle=False,
-        optimize=True,
-    )
-
-    data_dir_name = data_config.dir_name
-    print(data_dir_name)
