@@ -1,117 +1,106 @@
-import keras
+import numpy as np
 import tensorflow as tf
-from keras import losses
+from keras import metrics
 
-from src import dataset, load_data, model, util
+from src import download, load_data, model, util
 
 # Preproccessing parameters:
 VAL_SIZE: float = 0.2
 BATCH_SIZE: int = 32
-MAX_TOKENS: int = 10000
-SEQUENCE_LENGTH: int = 100
+MAX_TOKENS: int = 1000
+SEQUENCE_LENGTH: int = 50
 SHUFFLE: bool = True
 
 # Model parameters:
 EMBEDDING_DIM: int = 16
 DROPOUT_RATE: float = 0.1
 
-# TRAINING PARAMETERS
-EPOCHS: int = 5
-
-FORCE_DOWNLOAD: bool = False
+# Training parameters:
+EPOCHS: int = 2
+LOSS: str = "binary_crossentropy"
+METRICS: list[metrics.Metric] = [
+    metrics.Precision(name="precision"),
+    metrics.Recall(name="recall"),
+]
 
 
 def main() -> None:
-    TRAIN_SPLIT, TEST_SPLIT = load_data.Split.TRAIN, load_data.Split.TEST
-    # Load clean data
-    train_features, train_labels = dataset.load_clean_data(TRAIN_SPLIT)
-    test_features, test_labels = dataset.load_clean_data(TEST_SPLIT)
+    # Download the data (if it doesn't exist)
+    download.download_data("train", force_download=False)
+    download.download_data("test", force_download=False)
 
-    # Break the dataset into train and validation sets
-    (train_features, train_labels), (val_features, val_labels) = dataset.split_data(
-        train_features, train_labels, VAL_SIZE
-    )
+    # Load preprocessed TensorFlow datasets
+    train_ds = load_data.load_dataset("train", BATCH_SIZE, SHUFFLE)
+    test_ds = load_data.load_dataset("test", BATCH_SIZE, SHUFFLE)
 
-    print("Raw train samples: ", len(train_features))
-    print("Raw validation samples: ", len(val_features))
-    print("Raw test samples: ", len(test_features))
+    # Split the training dataset into train and validation sets
+    train_ds, val_ds = load_data.split_dataset(train_ds, VAL_SIZE, SHUFFLE)
 
-    # Create a vectorize layer and adapt it to the training dataset
+    # Create a vectorize layer and adapt it to the training text
     vectorize_layer = model.build_vectorize_layer(MAX_TOKENS, SEQUENCE_LENGTH)
-    vectorize_layer.adapt(train_features)
+    vectorize_layer.adapt(train_ds.map(lambda x, _: x))
 
     # Vectorize the text in the training, validation, and test datasets
-    train_features = vectorize_layer(train_features)
-    val_features = vectorize_layer(val_features)
-    test_features = vectorize_layer(test_features)
-
-    # Create a dataset from the vectorized features and labels
-    train_ds = tf.data.Dataset.from_tensor_slices((train_features, train_labels))
-    val_ds = tf.data.Dataset.from_tensor_slices((val_features, val_labels))
-    test_ds = tf.data.Dataset.from_tensor_slices((test_features, test_labels))
-
-    # Shuffle the training dataset
-    if SHUFFLE:
-        train_ds = train_ds.shuffle(len(train_features))
-
-    # Convert the datasets to batches
-    train_ds = train_ds.batch(BATCH_SIZE, drop_remainder=True)
-    val_ds = val_ds.batch(BATCH_SIZE, drop_remainder=True)
-    test_ds = test_ds.batch(BATCH_SIZE, drop_remainder=True)
+    vectorized_train_ds = train_ds.map(lambda x, y: (vectorize_layer(x), y))
+    vectorized_val_ds = val_ds.map(lambda x, y: (vectorize_layer(x), y))
+    vectorized_test_ds = test_ds.map(lambda x, y: (vectorize_layer(x), y))
 
     # Optimize the datasets for performance
-    train_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-    val_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-    test_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    vectorized_train_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    vectorized_val_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    vectorized_test_ds.cache().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
-    print("Train batches: ", len(train_ds))
-    print("Validation batches: ", len(val_ds))
-    print("Test batches: ", len(test_ds))
+    print("Train batches: ", len(vectorized_train_ds))
+    print("Validation batches: ", len(vectorized_val_ds))
+    print("Test batches: ", len(vectorized_test_ds))
+
+    # Get the first sample from the training dataset
+    # text_batch, label_batch = train_ds.take(1).as_numpy_iterator().get_next()
+    # text_sample, label_sample = text_batch[0], label_batch[0]
+    #
+    # vectorized_text_batch, _ = vectorized_train_ds.take(1).as_numpy_iterator().next()
+    # vectorized_text_sample = vectorized_text_batch[0]
+    #
+    # decded_text_sample = util.decode_text(vectorize_layer, vectorized_text_sample)
+    #
+    # print("Text: ", text_sample)
+    # print("Label: ", label_sample)
+    # print("Vectorized Text: ", vectorized_text_sample)
+    # print("Decoded Text: ", decded_text_sample)
 
     # Build and compile the base model (without the vectorization layer)
-    base_model = model.build_and_compile_model(
+    base_model = model.build_model(
         MAX_TOKENS,
         SEQUENCE_LENGTH,
         EMBEDDING_DIM,
         DROPOUT_RATE,
+        LOSS,
+        METRICS,
     )
 
     print(base_model.summary())
 
-    # Train the base model
-    history = base_model.fit(
-        train_ds,
-        validation_data=val_ds,
+    # Train the base model on vectorized training data
+    HISTORY = base_model.fit(
+        vectorized_train_ds,
+        validation_data=vectorized_val_ds,
         epochs=EPOCHS,
     )
 
-    # Evaluate the base model on the test dataset
-    loss, accuracy = base_model.evaluate(test_ds)
-    print("Test Loss: ", loss)
-    print("Test Accuracy: ", accuracy)
+    # Evaluate the base model on the vectorized test dataset
+    test_metrics = base_model.evaluate(vectorized_test_ds, return_dict=True)
+    print("Test metrics (vectorized): ", test_metrics)
 
     # Plot the training and validation history (binary accuracy and loss)
-    util.plot_history(history)
+    util.plot_history(HISTORY, METRICS)
 
     # Combine the vectorization layer with the base model to make an export model
-    export_model = keras.models.Sequential(
-        [
-            vectorize_layer,
-            base_model,
-            keras.layers.Activation("sigmoid"),
-        ]
-    )
-
-    # Compile the export model
-    export_model.compile(
-        loss=losses.BinaryCrossentropy(from_logits=False),
-        optimizer="adam",
-        metrics=["accuracy"],
-    )
+    export_model = model.build_export_model(vectorize_layer, base_model, LOSS, METRICS)
+    print(export_model.summary())
 
     # Test the export model with `raw_test_ds`, which yields raw strings
-    # metrics = export_model.evaluate(raw_test_ds, return_dict=True)
-    # print(metrics)
+    test_metrics = export_model.evaluate(test_ds, return_dict=True)
+    print("Test metrics (not vectorirzed): ", test_metrics)
 
     # Get predictions from the export model
     toxic_examples = tf.constant(
@@ -135,8 +124,19 @@ def main() -> None:
 
     toxic_predictions = export_model.predict(toxic_examples)
     safe_predictions = export_model.predict(safe_examples)
-    print("Toxic predictions: ", toxic_predictions)
-    print("Safe predictions: ", safe_predictions)
+
+    toxic_predictions = [np.round(row, 2).tolist() for row in toxic_predictions]
+    safe_predictions = [np.round(row, 2).tolist() for row in safe_predictions]
+
+    for text, prediction in zip(toxic_examples, toxic_predictions):
+        print(f"Text: {text}")
+        print(f"Prediction: {prediction}")
+        print("")
+
+    for text, prediction in zip(safe_examples, safe_predictions):
+        print(f"Text: {text}")
+        print(f"Prediction: {prediction}")
+        print("")
 
 
 if __name__ == "__main__":

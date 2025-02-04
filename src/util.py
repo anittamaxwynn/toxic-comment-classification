@@ -1,46 +1,38 @@
 import keras
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from keras import metrics
 
 
-def plot_history(history: keras.callbacks.History) -> None:
+def plot_history(
+    history: keras.callbacks.History, metrics: list[metrics.Metric]
+) -> None:
     history_dict = history.history
-    acc = history_dict["binary_accuracy"]
-    val_acc = history_dict["val_binary_accuracy"]
-    loss = history_dict["loss"]
-    val_loss = history_dict["val_loss"]
-    epochs = range(1, len(acc) + 1)
 
-    plt.plot(epochs, acc, "b", label="Training Accuracy")
-    plt.plot(epochs, val_acc, "r", label="Validation Accuracy")
-    plt.title("Training and Validation Accuracy")
-    plt.ylabel("Accuracy")
-    plt.xlabel("Epoch")
-    plt.legend(loc="upper left")
-    plt.show()
-
-    plt.plot(epochs, loss, "b", label="Training Loss")
-    plt.plot(epochs, val_loss, "r", label="Validation Loss")
-    plt.title("Training and Validation Loss")
-    plt.ylabel("Loss")
-    plt.xlabel("Epoch")
-    plt.legend(loc="upper left")
-    plt.show()
+    for metric in metrics:
+        train_values = history_dict[metric.name]
+        val_values = history_dict[f"val_{metric.name}"]
+        epochs = range(1, len(train_values) + 1)
+        plt.plot(epochs, train_values, label=f"train_{metric.name}")
+        plt.plot(epochs, val_values, label=f"val_{metric.name}")
+        plt.title(f"Training and Validation {metric.name}")
+        plt.ylabel(metric.name)
+        plt.xlabel("Epoch")
+        plt.legend(loc="upper left")
+        plt.show()
 
 
-def decode_vectorized_text(
-    layer: keras.layers.TextVectorization, text: tf.Tensor | list
+def decode_text(
+    vectorize_layer: keras.layers.TextVectorization, vectorized_text: tf.Tensor | list
 ) -> str:
     """Decodes a vectorized text tensor or list of strings to a string."""
-    # Check that the layer has been built
-    if not layer.built:
+    if not vectorize_layer.built:
         raise ValueError("Layer has not been built yet.")
 
     # Convert the text tensor to a list of strings
-    if isinstance(text, tf.Tensor):
-        text = text.numpy().tolist()
+    if isinstance(vectorized_text, tf.Tensor):
+        vectorized_text = vectorized_text.numpy().tolist()
 
-    vocab = layer.get_vocabulary()
-
-    decoded_text = " ".join([vocab[idx] for idx in text if idx != 0])
+    vocab = vectorize_layer.get_vocabulary()
+    decoded_text = " ".join([vocab[idx] for idx in vectorized_text if idx != 0])
     return decoded_text
