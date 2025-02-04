@@ -1,32 +1,38 @@
-from typing import Tuple
+from typing import List, Tuple
 
+import numpy as np
 import pandas as pd
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 
 from . import config, load_data
 
 
-def make_tf_dataset(
+def load_clean_data(
     split: load_data.Split,
-    batch_size: int = 32,
-    shuffle: bool = True,
-) -> tf.data.Dataset:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Create a TensorFlow dataset from a raw DataFrame.
+    Load the data from the raw data files.
     """
     df = load_data.load_and_validate_raw_df(split)
     df = process_df(df)
 
+    assert isinstance(df, pd.DataFrame), "Expected df to be a DataFrame"
+
     features = df[config.INPUT].values.astype(str)
     labels = df[config.LABELS].values.astype(int)
 
+    return features, labels
+
+
+def make_tf_dataset(
+    features: np.ndarray, labels: np.ndarray, batch_size: int
+) -> tf.data.Dataset:
+    """
+    Convert the data to a TensorFlow dataset.
+    """
     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
-
-    if shuffle:
-        dataset = dataset.shuffle(len(dataset), seed=0)
-
-    dataset = dataset.batch(batch_size, drop_remainder=True)
-
+    dataset = dataset.batch(batch_size=batch_size, drop_remainder=True)
     return dataset
 
 
@@ -46,6 +52,25 @@ def split_tf_dataset(
     train_ds = dataset.skip(n_test_samples)
 
     return train_ds, test_ds
+
+
+def split_data(
+    inputs: np.ndarray, labels: np.ndarray, test_size: float = 0.2
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Split the data into training and testing sets.
+    """
+    train_inputs, test_inputs, train_labels, test_labels = train_test_split(
+        inputs, labels, test_size=test_size, random_state=0
+    )
+
+    train = (train_inputs, train_labels)
+    test = (test_inputs, test_labels)
+
+    assert isinstance(train, tuple), "Expected train to be a tuple"
+    assert isinstance(test, tuple), "Expected test to be a tuple"
+
+    return train, test
 
 
 def process_df(df: pd.DataFrame) -> pd.DataFrame:

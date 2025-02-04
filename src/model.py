@@ -36,7 +36,7 @@ def build_and_compile_model(
     model.compile(
         loss="binary_crossentropy",
         optimizer="adam",
-        metrics=[tf.metrics.BinaryAccuracy(threshold=0.5)],
+        metrics=["accuracy"],
     )
 
     return model
