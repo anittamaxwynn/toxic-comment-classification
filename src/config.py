@@ -14,5 +14,6 @@ LABELS: list[str] = [
 
 DATA_DIR: Path = Path(__file__).parent.parent / "data"
 MODEL_DIR: Path = Path(__file__).parent.parent / "models"
+REPORTS_DIR: Path = Path(__file__).parent.parent / "reports"
 
 SEED: int = 0
