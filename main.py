@@ -1,6 +1,6 @@
 from keras import metrics
 
-from src import download, load_data, model, utils
+from src import download, preprocess
 
 # Preprocessing parameters:
 VAL_SIZE: float = 0.1
@@ -22,21 +22,16 @@ METRICS: list[metrics.Metric] = [
     metrics.AUC(name="prc", curve="PR"),
 ]
 
+
 def main() -> None:
     download.download_data()
-    # preprocess_data()
+    preprocess.preprocess_data()
     # load_data()
     # build_model()
     # train_model()
     # plot_metrics()
     # evaluate_model()
     # save_model()
-
-
-
-
-
-
 
 
 # def main() -> None:
@@ -90,52 +85,52 @@ def main() -> None:
 #     test_metrics = base_model.evaluate(test_ds, return_dict=True)
 #     print("Test metrics: ", {k: f"{v:.3f}" for k, v in test_metrics.items()})
 #
-    # # Combine the vectorization layer with the base model to make an export model
-    # export_model = model.build_export_model(vectorize_layer, base_model, METRICS)
-    # print(export_model.summary())
-    #
-    # # Test the export model with string inputs (not vectorized)
-    # test_metrics = export_model.evaluate(test_ds, return_dict=True)
-    # print(
-    #     "Test metrics (not vectorized): ",
-    #     {k: f"{v:.3f}" for k, v in test_metrics.items()},
-    # )
+# # Combine the vectorization layer with the base model to make an export model
+# export_model = model.build_export_model(vectorize_layer, base_model, METRICS)
+# print(export_model.summary())
+#
+# # Test the export model with string inputs (not vectorized)
+# test_metrics = export_model.evaluate(test_ds, return_dict=True)
+# print(
+#     "Test metrics (not vectorized): ",
+#     {k: f"{v:.3f}" for k, v in test_metrics.items()},
+# )
 
-    # # Get predictions from the export model
-    # toxic_examples = tf.constant(
-    #     [
-    #         "You are a motherfucker",
-    #         "I hate you",
-    #         "You are a fucking idiot",
-    #         "I want to kill you",
-    #         "I hate black people",
-    #     ]
-    # )
-    #
-    # safe_examples = tf.constant(
-    #     [
-    #         "You are a good person",
-    #         "I love you",
-    #         "You are a good human",
-    #         "I want to protect you",
-    #     ]
-    # )
-    #
-    # toxic_predictions = export_model.predict(toxic_examples)
-    # safe_predictions = export_model.predict(safe_examples)
-    #
-    # toxic_predictions = [row.tolist() for row in toxic_predictions]
-    # safe_predictions = [row.tolist() for row in safe_predictions]
-    #
-    # for text, prediction in zip(toxic_examples.numpy().tolist(), toxic_predictions):
-    #     print(f"Text: {text}")
-    #     print(f"Prediction: {[f'{val:.3f}' for val in prediction]}")
-    #     print("")
-    #
-    # for text, prediction in zip(safe_examples.numpy().tolist(), safe_predictions):
-    #     print(f"Text: {text}")
-    #     print(f"Prediction: {[f'{val:.3f}' for val in prediction]}")
-    #     print("")
+# # Get predictions from the export model
+# toxic_examples = tf.constant(
+#     [
+#         "You are a motherfucker",
+#         "I hate you",
+#         "You are a fucking idiot",
+#         "I want to kill you",
+#         "I hate black people",
+#     ]
+# )
+#
+# safe_examples = tf.constant(
+#     [
+#         "You are a good person",
+#         "I love you",
+#         "You are a good human",
+#         "I want to protect you",
+#     ]
+# )
+#
+# toxic_predictions = export_model.predict(toxic_examples)
+# safe_predictions = export_model.predict(safe_examples)
+#
+# toxic_predictions = [row.tolist() for row in toxic_predictions]
+# safe_predictions = [row.tolist() for row in safe_predictions]
+#
+# for text, prediction in zip(toxic_examples.numpy().tolist(), toxic_predictions):
+#     print(f"Text: {text}")
+#     print(f"Prediction: {[f'{val:.3f}' for val in prediction]}")
+#     print("")
+#
+# for text, prediction in zip(safe_examples.numpy().tolist(), safe_predictions):
+#     print(f"Text: {text}")
+#     print(f"Prediction: {[f'{val:.3f}' for val in prediction]}")
+#     print("")
 
 
 if __name__ == "__main__":

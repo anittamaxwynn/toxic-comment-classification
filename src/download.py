@@ -99,4 +99,4 @@ def _validate_df(df: pd.DataFrame) -> None:
 
 
 if __name__ == "__main__":
-    download_data()
+    download_data(force_download=True)
