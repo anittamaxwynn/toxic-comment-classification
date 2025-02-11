@@ -1,15 +1,13 @@
-from keras import metrics
-
 from src import download, preprocess
 
 FORCE_DOWNLOAD: bool = False
 
-VAL_SIZE: float = 0.1
-BATCH_SIZE: int = 1024
+VAL_SIZE: float = 0.2
+BATCH_SIZE: int = 64
 VOCAB_SIZE: int = 10000
 MAX_LENGTH: int = 100
 SHUFFLE: bool = True
-FORCE_PREPROCESS: bool = True
+FORCE_PREPROCESS: bool = False
 
 # EMBEDDING_DIM: int = 32
 # DROPOUT_RATE: float = 0.1
@@ -23,18 +21,25 @@ FORCE_PREPROCESS: bool = True
 # ]
 #
 
+
 def main() -> None:
     download.download_data(FORCE_DOWNLOAD)
-    train_ds, val_ds, test_ds = preprocess.make_datasets(
-        VAL_SIZE,
-        VOCAB_SIZE,
-        MAX_LENGTH,
-        SHUFFLE,
-        FORCE_PREPROCESS,
+
+    datasets, param_hash = preprocess.make_datasets(
+        val_size=VAL_SIZE,
+        vocab_size=VOCAB_SIZE,
+        max_length=MAX_LENGTH,
+        batch_size=BATCH_SIZE,
+        shuffle=SHUFFLE,
+        force_preprocess=FORCE_PREPROCESS,
     )
-    print(len(train_ds))
-    print(len(val_ds))
-    print(len(test_ds))
+
+    train_ds, val_ds, test_ds = datasets.values()
+
+    print(len(train_ds), len(val_ds), len(test_ds))
+
+    vectorize_layer = preprocess.load_vectorize_layer(param_hash=param_hash)
+    print(vectorize_layer.get_config())
 
     # build_model()
     # train_model()
