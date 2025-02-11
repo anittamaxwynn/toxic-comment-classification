@@ -2,31 +2,40 @@ from keras import metrics
 
 from src import download, preprocess
 
-# Preprocessing parameters:
+FORCE_DOWNLOAD: bool = False
+
 VAL_SIZE: float = 0.1
 BATCH_SIZE: int = 1024
-MAX_TOKENS: int = 10000
-SEQUENCE_LENGTH: int = 100
+VOCAB_SIZE: int = 10000
+MAX_LENGTH: int = 100
 SHUFFLE: bool = True
+FORCE_PREPROCESS: bool = True
 
-# Model parameters:
-EMBEDDING_DIM: int = 32
-DROPOUT_RATE: float = 0.1
+# EMBEDDING_DIM: int = 32
+# DROPOUT_RATE: float = 0.1
 
-# Training parameters:
-EPOCHS: int = 5
-METRICS: list[metrics.Metric] = [
-    metrics.Precision(name="precision"),
-    metrics.Recall(name="recall"),
-    metrics.AUC(name="auc"),
-    metrics.AUC(name="prc", curve="PR"),
-]
-
+# EPOCHS: int = 5
+# METRICS: list[metrics.Metric] = [
+#     metrics.Precision(name="precision"),
+#     metrics.Recall(name="recall"),
+#     metrics.AUC(name="auc"),
+#     metrics.AUC(name="prc", curve="PR"),
+# ]
+#
 
 def main() -> None:
-    download.download_data()
-    preprocess.preprocess_data()
-    # load_data()
+    download.download_data(FORCE_DOWNLOAD)
+    train_ds, val_ds, test_ds = preprocess.make_datasets(
+        VAL_SIZE,
+        VOCAB_SIZE,
+        MAX_LENGTH,
+        SHUFFLE,
+        FORCE_PREPROCESS,
+    )
+    print(len(train_ds))
+    print(len(val_ds))
+    print(len(test_ds))
+
     # build_model()
     # train_model()
     # plot_metrics()

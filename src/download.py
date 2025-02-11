@@ -15,7 +15,8 @@ from . import config
 
 
 def download_data(
-    download_path: Path = config.DATA_DIR / "raw", force_download: bool = False
+    force_download: bool = False,
+    download_path: Path = config.DATA_DIR.joinpath("raw"),
 ) -> None:
     if force_download or not _raw_data_exists(download_path):
         print("Downloading data from Kaggle...")
@@ -65,8 +66,6 @@ def _raw_data_exists(path: Path) -> bool:
 
 
 class DataSchema(BaseModel):
-    """Define schema for raw data."""
-
     id: str
     comment_text: str
     toxic: Literal[0, -1, 1]
