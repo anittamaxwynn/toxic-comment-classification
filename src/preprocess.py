@@ -48,7 +48,6 @@ def make_datasets(
         "max_length": max_length,
         "batch_size": batch_size,
         "shuffle": shuffle,
-        "optimize": optimize,
     }
     param_hash = _create_parameter_hash(params)
 
