@@ -1,5 +1,5 @@
 # Ignore contents of data directories but not the directories themselves
-data/processed/*
+data/processed/**
 
 # Don't ignore the .gitkeep files
 !data/processed/.gitkeep
@@ -17,7 +17,6 @@ data/processed/*
 
 # Ignore all json files
 *.json
-
 
 
 # Mac OS-specific storage files
