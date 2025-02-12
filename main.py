@@ -1,30 +1,29 @@
-from src import download, preprocess
+from typing import Optional
+
+from src import download, model, preprocess, utils
 
 FORCE_DOWNLOAD: bool = False
 
 VAL_SIZE: float = 0.2
-BATCH_SIZE: int = 64
+BATCH_SIZE: int = 128
 VOCAB_SIZE: int = 20000
-MAX_LENGTH: int = 100
+MAX_LENGTH: int = 200
 SHUFFLE: bool = True
 FORCE_PREPROCESS: bool = False
 
-# EMBEDDING_DIM: int = 32
-# DROPOUT_RATE: float = 0.1
+EMBEDDING_DIM: int = 128
+LSTM_UNITS: Optional[int] = 60
+HIDDEN_UNITS: Optional[int] = 50
+DROPOUT_RATE: Optional[float] = 0.1
 
-# EPOCHS: int = 5
-# METRICS: list[metrics.Metric] = [
-#     metrics.Precision(name="precision"),
-#     metrics.Recall(name="recall"),
-#     metrics.AUC(name="auc"),
-#     metrics.AUC(name="prc", curve="PR"),
-# ]
-#
+EPOCHS: int = 5
 
 
 def main() -> None:
+    # Download raw data
     download.download_data(FORCE_DOWNLOAD)
 
+    # Preprocess data and create TF datasets
     datasets, param_hash = preprocess.make_datasets(
         val_size=VAL_SIZE,
         vocab_size=VOCAB_SIZE,
@@ -33,65 +32,61 @@ def main() -> None:
         shuffle=SHUFFLE,
         force_preprocess=FORCE_PREPROCESS,
     )
-
     train_ds, val_ds, test_ds = datasets.values()
+    print("Training batches: ", len(train_ds))
+    print("Validation batches: ", len(val_ds))
+    print("Test batches: ", len(test_ds))
 
-    print(len(train_ds), len(val_ds), len(test_ds))
+    # Extract features and labels arrays from dataset
+    _, train_labels = utils.dataset_to_numpy(train_ds)
+    _, val_labels = utils.dataset_to_numpy(val_ds)
+    _, test_labels = utils.dataset_to_numpy(test_ds)
+
+    # Plot label distributions
+    utils.plot_label_counts(train_labels, normalize=True)
+    utils.plot_label_counts(val_labels, normalize=True, is_val=True)
+    utils.plot_label_counts(test_labels, normalize=True, is_test=True)
 
     vectorize_layer = preprocess.load_vectorize_layer(param_hash=param_hash)
-    print(vectorize_layer.get_config())
 
-    # build_model()
-    # train_model()
-    # plot_metrics()
-    # evaluate_model()
+    # Build training model
+    training_model = model.build_model(
+        VOCAB_SIZE,
+        MAX_LENGTH,
+        EMBEDDING_DIM,
+        LSTM_UNITS,
+        HIDDEN_UNITS,
+        DROPOUT_RATE,
+    )
+    print(training_model.summary())
+
+    # Train model
+    early_stopping = model.early_stopping()
+    history = training_model.fit(
+        train_ds,
+        epochs=EPOCHS,
+        validation_data=val_ds,
+        callbacks=[early_stopping],
+    )
+
+    # Plot training metrics
+    utils.plot_metrics(history)
+
+    # Evaluate model on test data
+    test_evaluation = training_model.evaluate(test_ds, return_dict=True)
+    for metric, value in test_evaluation.items():
+        print(f"Test {metric}: {value:.3f}")
+
+    # Chain the vectorize layer and the training model
+    export_model = model.build_export_model(
+        vectorize_layer=vectorize_layer,
+        training_model=training_model,
+    )
+    print(export_model.summary())
+
     # save_model()
 
 
-# def main() -> None:
-#     download.download_data("train", force_download=False)
-#     download.download_data("test", force_download=False)
-#
-#     train_ds, val_ds, test_ds = load_data.load_datasets(
-#         val_size=VAL_SIZE, shuffle=SHUFFLE
-#     )
-#     train_ds.batch(BATCH_SIZE)
-#
-#     print("Adpating vectorize layer...")
-#     vectorize_layer = model.VectorizeLayer(MAX_TOKENS, SEQUENCE_LENGTH)
-#     vectorize_layer.adapt(train_ds.map(lambda x, _: x))
-#     print("Vectorize layer adapted.")
-#
-#     print("Vectorizing datasets...")
-#     train_ds = vectorize_layer.vectorize(train_ds)
-#     val_ds = vectorize_layer.vectorize(val_ds)
-#     test_ds = vectorize_layer.vectorize(test_ds)
-#     print("Datasets vectorized.")
-#
-#     print("Optimizing datasets...")
-#     # Optimize ALL datasets for performance
-#     train_ds = load_data.optimize_ds(train_ds)
-#     val_ds = load_data.optimize_ds(val_ds)
-#     test_ds = load_data.optimize_ds(test_ds)
-#     print("Datasets optimized.")
-#
-#     print("Building model...")
-#     base_model = model.build_model(
-#         MAX_TOKENS,
-#         SEQUENCE_LENGTH,
-#         EMBEDDING_DIM,
-#         DROPOUT_RATE,
-#         METRICS,
-#     )
-#
-#     print(base_model.summary())
-#
-#     print("Training model...")
-#     HISTORY = base_model.fit(
-#         train_ds,
-#         validation_data=val_ds,
-#         epochs=EPOCHS,
-#         callbacks=[model.early_stopping()],
 #     )
 #
 #     utils.plot_metrics(HISTORY)

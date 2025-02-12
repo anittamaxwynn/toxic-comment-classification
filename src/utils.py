@@ -1,12 +1,13 @@
 import os
 from pathlib import Path
+from typing import Tuple
 
 import keras
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+import tensorflow as tf
 
-from . import config
+from . import config, preprocess
 
 plt.rcParams.update(
     {
@@ -28,12 +29,17 @@ colors = [
 ]
 
 
-def _get_metrics(history: keras.callbacks.History) -> list[str]:
-    """
-    Extract all the metric names from a History object.
-    """
-    all_metrics = history.history.keys()
-    return [metric for metric in all_metrics if "val_" not in metric]
+# ----------------------------
+# TYPE ALIASES
+# ----------------------------
+
+
+Dataset = tf.data.Dataset
+
+
+# ----------------------------
+# MODEL PLOTTING
+# ----------------------------
 
 
 def plot_metrics(
@@ -58,13 +64,14 @@ def plot_metrics(
     else:
         axes = axes.flatten().tolist()
 
+    epochs = range(1, len(history.epoch) + 1)
     for ax, metric in zip(axes, metrics):
         name = metric.replace("_", " ").capitalize()
 
         # Plot training and validation metrics
-        ax.plot(history.epoch, history.history[metric], color="C0", label="Train")
+        ax.plot(epochs, history.history[metric], color="C0", label="Train")
         ax.plot(
-            history.epoch,
+            epochs,
             history.history["val_" + metric],
             color="C1",
             linestyle="--",
@@ -73,6 +80,8 @@ def plot_metrics(
 
         ax.set_xlabel("Epoch")
         ax.set_ylabel(name)
+
+        ax.set_xticks(epochs)
 
         if metric == "loss":
             ax.set_ylim([0, ax.get_ylim()[1]])
@@ -94,16 +103,62 @@ def plot_metrics(
     print(f"Plot saved as: {filename}")
 
 
+def _get_metrics(history: keras.callbacks.History) -> list[str]:
+    """
+    Extract all the metric names from a History object.
+    """
+    all_metrics = history.history.keys()
+    return [metric for metric in all_metrics if "val_" not in metric]
+
+
+# ----------------------------
+# DATASET PLOTS
+# ----------------------------
+
+
+def dataset_to_numpy(dataset: Dataset) -> Tuple[np.ndarray, np.ndarray]:
+    features_list = []
+    labels_list = []
+    for features_batch, labels_batch in dataset.as_numpy_iterator():  # type: ignore
+        features_list.append(features_batch)
+        labels_list.append(labels_batch)
+
+    features_array = np.concatenate(features_list, axis=0)
+    labels_array = np.concatenate(labels_list, axis=0)
+    return features_array, labels_array
+
+
+def get_category_counts(
+    labels_array: np.ndarray, label_names: list[str] = config.LABELS, normalize=False
+) -> dict[str, dict[str, int | float]]:
+    """Get the number of times each category appears in the labels array."""
+    num_samples, num_labels = labels_array.shape
+    if len(label_names) != num_labels:
+        raise ValueError(
+            "The number of labels does not match the number of label names."
+        )
+
+    unique_counts = {}
+    for col in range(labels_array.shape[1]):
+        unique, counts = np.unique(labels_array[:, col], return_counts=True)
+
+        if normalize:
+            counts = counts / num_samples
+
+        unique_counts[label_names[col]] = dict(zip(unique, counts))
+
+    return unique_counts
+
+
 def plot_label_counts(
-    df: pd.DataFrame,
-    labels: list[str],
+    labels_array: np.ndarray,
+    label_names: list[str] = config.LABELS,
     normalize: bool = False,
     is_val: bool = False,
     is_test: bool = False,
     save_dir: str | Path = config.REPORTS_DIR,
 ) -> None:
     """Generates and saves a grouped bar chart for label distributions."""
-
     # Set split name
     if is_val:
         split = "validation"
@@ -112,8 +167,8 @@ def plot_label_counts(
     else:
         split = "train"
 
-    # Get label counts
-    label_counts = get_label_counts(df, labels, normalize)
+    # Get label counts for each unique label in numpy array
+    label_counts = get_category_counts(labels_array, label_names, normalize)
 
     # Extract all unique categories (e.g., {0, 1, -1})
     categories = sorted(
@@ -122,13 +177,13 @@ def plot_label_counts(
 
     # Convert label_counts to a 2D list for plotting
     values = [
-        [label_counts[label].get(cat, 0) for label in labels] for cat in categories
+        [label_counts[label].get(cat, 0) for label in label_names] for cat in categories
     ]
 
     # Define bar width based on number of categories
     num_categories = len(categories)
     bar_width = 0.8 / num_categories  # Adjust width so bars fit within each group
-    x = np.arange(len(labels))  # X positions for groups
+    x = np.arange(len(label_names))  # X positions for groups
 
     # Create the plot
     fig, ax = plt.subplots()
@@ -158,7 +213,7 @@ def plot_label_counts(
 
     # Formatting the plot
     ax.set_xticks(x)  # Center x-axis labels
-    ax.set_xticklabels(labels, rotation=45)
+    ax.set_xticklabels(label_names, rotation=45)
     ax.set_xlabel("Labels")
     ax.set_ylabel("Proportion" if normalize else "Count")
     ax.set_title(f"Distribution of Values in Each Label for {split} data")
@@ -171,14 +226,6 @@ def plot_label_counts(
     plt.close(fig)
 
     print(f"Plot saved as: {filename}")
-
-
-def get_label_counts(
-    df: pd.DataFrame, labels: list[str], normalize: bool = True
-) -> dict[str, dict]:
-    return {
-        label: df[label].value_counts(normalize=normalize).to_dict() for label in labels
-    }
 
 
 # def decode_text(
@@ -195,3 +242,21 @@ def get_label_counts(
 #     vocab = vectorize_layer.get_vocabulary()
 #     decoded_text = " ".join([vocab[idx] for idx in vectorized_text if idx != 0])
 #     return decoded_text
+
+
+if __name__ == "__main__":
+    datasets, param_hash = preprocess.make_datasets(
+        val_size=0.2,
+        vocab_size=10000,
+        max_length=100,
+        batch_size=32,
+    )
+    train_ds, val_ds, test_ds = datasets.values()
+
+    train_features, train_labels = dataset_to_numpy(train_ds)
+    val_features, val_labels = dataset_to_numpy(val_ds)
+    test_features, test_labels = dataset_to_numpy(test_ds)
+
+    plot_label_counts(train_labels, config.LABELS, normalize=True)
+    plot_label_counts(val_labels, config.LABELS, normalize=True, is_val=True)
+    plot_label_counts(test_labels, config.LABELS, normalize=True, is_test=True)

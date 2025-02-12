@@ -1,143 +1,133 @@
-from typing import Literal, Tuple
+from typing import Optional
 
 import keras
 import tensorflow as tf
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+
+from . import config
+
+logger = config.setup_logger(__name__)
 
 
-class VectorizeLayerConfig(BaseModel):
-    max_tokens: PositiveInt = Field(
-        description="Maximum number of tokens in the vocabulary"
-    )
-    sequence_length: PositiveInt = Field(description="Length of output sequences")
+# ----------------------------
+# TYPE ALIASES
+# ----------------------------
 
 
-class VectorizeLayer:
-    def __init__(self, max_tokens: int, sequence_length: int) -> None:
-        # Validate configuration
-        self.config = VectorizeLayerConfig(
-            max_tokens=max_tokens, sequence_length=sequence_length
-        )
-
-        # Initialize the layer
-        self.layer = keras.layers.TextVectorization(
-            max_tokens=self.config.max_tokens,
-            output_mode="int",
-            output_sequence_length=self.config.sequence_length,
-            sparse=False,
-        )
-        self.adapted = False
-
-    def adapt(self, text: tf.Tensor | tf.data.Dataset) -> None:
-        self.layer.adapt(text)
-        self.adapted = True
-
-    def vectorize(self, dataset: tf.data.Dataset) -> tf.data.Dataset:
-        return dataset.map(self._vectorize_text)
-
-    def _vectorize_text(
-        self, text: tf.Tensor, labels: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
-        if not self.adapted:
-            raise ValueError(
-                "The vectorize layer must be adapted before vectorizing text."
-            )
-        text = tf.expand_dims(text, axis=-1)
-        return self.layer(text), labels
+Sequential = keras.models.Sequential
+Model = keras.Model
+TextVectorizer = keras.layers.TextVectorization
+Layer = keras.layers.Layer
+Metric = keras.metrics.Metric
+Loss = keras.losses.Loss
 
 
-class ModelConfig(BaseModel):
-    """Configuration for a machine learning model.
+# ----------------------------
+# METRICS
+# ----------------------------
 
-    Allows flexible specification of model parameters with type validation.
-    """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+def get_metrics() -> list[Metric]:
+    return [
+        keras.metrics.Precision(name="precision"),
+        keras.metrics.Recall(name="recall"),
+        keras.metrics.AUC(name="auc"),
+        keras.metrics.AUC(name="prc", curve="PR"),
+    ]
 
-    max_tokens: PositiveInt = Field(
-        description="Maximum number of tokens in the vocabulary"
-    )
-    sequence_length: PositiveInt = Field(description="Length of output sequences")
-    embedding_dim: PositiveInt = Field(description="Dimension of the embedding")
-    dropout_rate: float = Field(
-        ge=0.0, le=1.0, description="Dropout rate for the model (between 0 and 1)"
-    )
-    optimizer: Literal["adam", "sgd"] = Field(description="Optimizer for the model")
-    loss: keras.losses.Loss = Field(description="Loss function for the model")
-    metrics: list[keras.metrics.Metric] = Field(
-        description="Training and validation metrics for the model"
-    )
+
+# ----------------------------
+# MODEL BUILDERS
+# ----------------------------
 
 
 def build_model(
-    max_tokens: int,
-    sequence_length: int,
+    vocab_size: int,
+    max_length: int,
     embedding_dim: int,
-    dropout_rate: float,
-    metrics: list[keras.metrics.Metric],
-    optimizer: Literal["adam", "sgd"] = "adam",
-    loss: keras.losses.Loss = keras.losses.BinaryCrossentropy(),
-) -> keras.models.Sequential:
-    config = ModelConfig(
-        max_tokens=max_tokens,
-        sequence_length=sequence_length,
-        embedding_dim=embedding_dim,
-        dropout_rate=dropout_rate,
-        optimizer=optimizer,
-        loss=loss,
-        metrics=metrics,
+    lstm_units: Optional[int] = None,
+    hidden_units: Optional[int] = None,
+    dropout_rate: Optional[float] = None,
+) -> Model:
+    """
+    Builds a keras model for classifying toxic comments.
+    Inputs are tokenized text, and outputs are the probability of the comment being toxic.
+    """
+    logger.info(
+        f"Building model with vocab_size={vocab_size}, max_length={max_length}, embedding_dim={embedding_dim}, lstm_units={lstm_units}, hidden_units={hidden_units}, dropout_rate={dropout_rate}"
     )
 
-    model = keras.models.Sequential(
-        [
-            keras.layers.Input(
-                shape=(config.sequence_length,), dtype=tf.int32, name="vectorized_text"
-            ),
-            keras.layers.Embedding(
-                input_dim=config.max_tokens,
-                output_dim=config.embedding_dim,
-                name="embedding",
-            ),
-            keras.layers.LSTM(
-                config.embedding_dim, return_sequences=False, name="lstm"
-            ),
-            keras.layers.Dropout(config.dropout_rate, name="dropout_1"),
-            keras.layers.Dense(32, activation="relu", name="hidden"),
-            keras.layers.Dropout(config.dropout_rate, name="dropout_2"),
-            keras.layers.Dense(6, activation="sigmoid", name="toxic_labels"),
-        ]
+    input_tokens = keras.layers.Input(
+        shape=(max_length,), dtype=tf.int32, name="tokens"
+    )
+    embedding_layer = keras.layers.Embedding(
+        input_dim=vocab_size,
+        output_dim=embedding_dim,
+        name="embedding",
     )
 
-    model.compile(optimizer=config.optimizer, loss=config.loss, metrics=config.metrics)
+    lstm_layer = (
+        keras.layers.LSTM(lstm_units, return_sequences=True, name="lstm")
+        if lstm_units
+        else keras.layers.Identity()
+    )
+    hidden_layer = (
+        keras.layers.Dense(hidden_units, activation="relu", name="hidden")
+        if hidden_units
+        else keras.layers.Identity()
+    )
+
+    x = embedding_layer(input_tokens)
+    x = lstm_layer(x)
+    x = keras.layers.GlobalMaxPool1D()(x)
+    x = (
+        keras.layers.Dropout(dropout_rate) if dropout_rate else keras.layers.Identity()
+    )(x)
+    x = hidden_layer(x)
+    x = (
+        keras.layers.Dropout(dropout_rate) if dropout_rate else keras.layers.Identity()
+    )(x)
+
+    outputs = keras.layers.Dense(6, activation="sigmoid", name="toxic_labels")(x)
+
+    model = keras.models.Model(
+        inputs=input_tokens, outputs=outputs, name="training_model"
+    )
+
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=get_metrics())
 
     return model
 
 
 def build_export_model(
-    vectorize_layer: VectorizeLayer,
-    model: keras.models.Sequential,
-    metrics: list[keras.metrics.Metric],
-    optimizer: Literal["adam", "sgd"] = "adam",
-    loss: keras.losses.Loss = keras.losses.BinaryCrossentropy(),
-) -> keras.models.Sequential:
+    vectorize_layer: TextVectorizer,
+    training_model: Model,
+) -> Sequential:
     # Check if the vectorize layer and models have been built
-    if not vectorize_layer.layer.built:
+    if not vectorize_layer.built:
         raise ValueError(
             "The vectorize layer must be built before building the export model."
         )
-    if not model.built:
+    if not training_model.built:
         raise ValueError("The model must be built before building the export model.")
 
-    # Create the export model
-    export_model = keras.models.Sequential(
+    logger.info("Chaining vectorize layer and training model to build export model...")
+    export_model = Sequential(
         [
-            vectorize_layer.layer,
-            model,
+            keras.layers.Input(shape=(1,), dtype="string", name="raw_text"),
+            vectorize_layer,
+            training_model,
         ]
     )
 
-    export_model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+    export_model.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=get_metrics()
+    )
     return export_model
+
+
+# ----------------------------
+# CALLBACKS
+# ----------------------------
 
 
 def early_stopping() -> keras.callbacks.EarlyStopping:
@@ -148,3 +138,24 @@ def early_stopping() -> keras.callbacks.EarlyStopping:
         mode="max",
         restore_best_weights=True,
     )
+
+
+if __name__ == "__main__":
+    test_model = build_model(
+        vocab_size=10000,
+        max_length=100,
+        embedding_dim=32,
+        lstm_units=32,
+        hidden_units=50,
+        dropout_rate=0.2,
+    )
+
+    test_model.summary()
+
+    other_model = build_model(
+        vocab_size=10000,
+        max_length=100,
+        embedding_dim=32,
+    )
+
+    other_model.summary()

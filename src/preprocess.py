@@ -17,6 +17,7 @@ from . import config
 
 logger = config.setup_logger(__name__)
 
+
 # ----------------------------
 # TYPE ALIASES
 # ----------------------------
