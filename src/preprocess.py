@@ -15,6 +15,8 @@ from keras.api.layers import TextVectorization
 
 from . import config
 
+logger = config.setup_logger(__name__)
+
 # ----------------------------
 # TYPE ALIASES
 # ----------------------------
@@ -101,7 +103,7 @@ def save_vectorize_layer(
 
     filepath = model_dir.joinpath(f"vectorize_layer_model_{param_hash}.keras")
     vectorize_layer_model.save(filepath)
-    print(f"Vectorizer saved to {filepath}")
+    logger.info(f"Vectorizer saved to {filepath}")
 
 
 def load_vectorize_layer(
@@ -122,6 +124,7 @@ def load_vectorize_layer(
     vectorize_layer_model = keras.models.load_model(filepath)
     vectorize_layer = vectorize_layer_model.layers[-1]  # type: ignore
     assert vectorize_layer.built, "Vectorizer is not built (or adapted)"
+    logger.info(f"Loaded vectorizer with parameter hash {param_hash}")
     return vectorize_layer
 
 
@@ -148,6 +151,7 @@ def _save_preprocessing_params(
     params_file = params_dir.joinpath(f"{param_hash}.json")
     with open(params_file, "w") as f:
         json.dump(params, f, indent=2)
+    logger.info(f"Saved preprocessing parameters to {params_file}")
 
 
 def _load_preprocessing_params(data_dir: Path, param_hash: str) -> Dict[str, Any]:
@@ -172,23 +176,32 @@ def _create_new_datasets(
     model_dir: Path,
 ) -> Dict[str, Dataset]:
     """Create new preprocessed datasets from raw data."""
-    print(f"Preprocessing data with parameter hash {param_hash}...")
+    logger.info(f"Creating new TensorFlow datasets with parameter hash {param_hash}...")
 
     # Load and clean data
+    logger.debug("Loading and cleaning raw training data...")
     train = _clean_dataframe(_load_raw_train(data_dir))
+    logger.debug("Loading and cleaning raw test data...")
     test = _clean_dataframe(_load_raw_test(data_dir))
 
     # Create datasets
+    logger.debug("Converting DataFrames to TensorFlow datasets...")
     train_ds = _convert_dataframe_to_dataset(train, config.INPUT, config.LABELS)
     test_ds = _convert_dataframe_to_dataset(test, config.INPUT, config.LABELS)
+
+    logger.debug("Splitting training dataset into train and validation sets...")
     train_ds, val_ds = _split_dataset(train_ds, params["val_size"], params["shuffle"])
 
     # Batch datasets
+    logger.debug(f"Batching datasets with batch size {params['batch_size']}...")
     train_ds = train_ds.batch(params["batch_size"], drop_remainder=True)
     val_ds = val_ds.batch(params["batch_size"], drop_remainder=True)
     test_ds = test_ds.batch(params["batch_size"], drop_remainder=True)
 
     # Create and adapt vectorizer
+    logger.debug(
+        f"Creating and adapting vectorizer with max_tokens={params['vocab_size']} and output_sequence_length={params['max_length']}..."
+    )
     vectorize_layer = TextVectorization(
         max_tokens=params["vocab_size"],
         output_mode="int",
@@ -197,6 +210,7 @@ def _create_new_datasets(
     vectorize_layer.adapt(train[config.INPUT])
 
     # Vectorize datasets
+    logger.debug("Vectorizing datasets...")
     train_ds = _vectorize_dataset(train_ds, vectorize_layer)
     val_ds = _vectorize_dataset(val_ds, vectorize_layer)
     test_ds = _vectorize_dataset(test_ds, vectorize_layer)
@@ -217,7 +231,7 @@ def _load_existing_datasets(
     data_dir: Path,
 ) -> Dict[str, Dataset]:
     """Load existing preprocessed datasets."""
-    print(f"Loading datasets with parameter hash {param_hash}...")
+    logger.info(f"Loading datasets with parameter hash {param_hash}...")
     loaded_params = _load_preprocessing_params(data_dir, param_hash)
     if loaded_params != params:
         raise ValueError(
@@ -240,6 +254,7 @@ def _vectorize_dataset(dataset: Dataset, vectorize_layer: TextVectorizer) -> Dat
 
 def _optimize_datasets(datasets: Dict[str, Dataset]) -> Dict[str, Dataset]:
     """Apply performance optimizations to datasets."""
+    logger.info("Applying performance optimizations to datasets...")
     return {
         key: ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
         for key, ds in datasets.items()
@@ -258,6 +273,8 @@ def _save_datasets(
 
     for name, ds in datasets.items():
         ds.save(str(processed_dir.joinpath(f"{name}_{param_hash}")))
+
+    logger.info(f"Saved datasets to {processed_dir}")
 
 
 def _convert_dataframe_to_dataset(

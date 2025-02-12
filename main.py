@@ -2,12 +2,12 @@ from src import download, preprocess
 
 FORCE_DOWNLOAD: bool = False
 
-VAL_SIZE: float = 0.2
+VAL_SIZE: float = 0.3
 BATCH_SIZE: int = 64
 VOCAB_SIZE: int = 10000
 MAX_LENGTH: int = 100
 SHUFFLE: bool = True
-FORCE_PREPROCESS: bool = False
+FORCE_PREPROCESS: bool = True
 
 # EMBEDDING_DIM: int = 32
 # DROPOUT_RATE: float = 0.1
