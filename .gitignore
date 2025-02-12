@@ -1,11 +1,9 @@
-# Ignore contents of data directories but not the directories themselves
+# Data directories - ignore contents but keep structure
+data/raw/*
 data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
 
-# Don't ignore the .gitkeep files
-!data/processed/params/.gitkeep
-
-# Ignore all csv files
-*.csv
 
 # Ignore all log files
 *.log
