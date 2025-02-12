@@ -1,16 +1,22 @@
 # Ignore contents of data directories but not the directories themselves
-data/raw/*
 data/processed/*
-data/processed/params/*
-models/*
-logs/*
 
 # Don't ignore the .gitkeep files
-!data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/processed/params/.gitkeep
-!models/.gitkeep
-!logs/.gitkeep
+
+# Ignore all csv files
+*.csv
+
+# Ignore all log files
+*.log
+
+# Ignore all keras model files
+*.h5
+*.keras
+
+# Ignore all json files
+*.json
 
 
 
