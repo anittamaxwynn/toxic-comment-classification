@@ -1,0 +1,29 @@
+[project]
+name = "toxic-comment-classification"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "hf-datasets>=0.3.0",
+    "huggingface>=0.0.1",
+    "huggingface-hub>=0.29.1",
+    "kagglehub>=0.3.9",
+    "matplotlib>=3.9.3",
+    "pandas>=2.2.3",
+    "pydantic>=2.10.6",
+    "pydantic-settings>=2.7.1",
+    "pydot>=3.0.4",
+    "scikit-learn>=1.6.0",
+    "scikit-multilearn>=0.2.0",
+    "tensorflow==2.16.1",
+    "tensorflow-text==2.16.1",
+    "tf-models-official>=2.1.0.dev2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest-mock>=3.14.0",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+]
